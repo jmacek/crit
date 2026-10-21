@@ -535,6 +535,10 @@ func (s *Session) buildFilesForFocus(f Focus, v vcs.VCS, repoRoot string) ([]*Fi
 			return nil, "", err
 		}
 	}
+	s.mu.RLock()
+	ignorePatterns := s.IgnorePatterns
+	s.mu.RUnlock()
+	changes = filterBinary(config.FilterIgnored(changes, ignorePatterns))
 	var numstats map[string]vcs.NumstatEntry
 	if len(changes) > lazyFileThreshold {
 		// Between-SHA only — never fall back to working-tree numstat, which
