@@ -78,6 +78,30 @@ test.describe('Pluggable renderers — seeded comments', () => {
   });
 });
 
+test.describe('Pluggable renderers — quoted comments', () => {
+  test('a quote of diagram text is highlighted in the drawn diagram', async ({ page, request }) => {
+    await clearAllComments(request);
+    const res = await request.post(`/api/file/comments?path=${encodeURIComponent(MMD)}`, {
+      data: { start_line: 1, end_line: 4, body: 'Name this step', quote: 'Handle request' },
+    });
+    expect(res.ok()).toBeTruthy();
+    await loadPage(page);
+    const item = await revealFile(page, MMD);
+    await expect(item.locator('.crit-render-output svg')).toBeVisible();
+    // The highlight is on the label in the diagram, not in the hidden source.
+    await expect(item.locator('.crit-render-output mark.quote-highlight', { hasText: 'Handle request' })).toBeVisible();
+    await expect(item.locator('.crit-render-source mark.quote-highlight')).toHaveCount(0);
+
+    // Back from Source, the diagram comes from the render cache: one highlight, not two.
+    const toggle = fileHeader(page, MMD).locator('.file-header-toggle');
+    await toggle.locator('[data-mode="document"]').click();
+    await expect(item.locator('.crit-render')).toHaveCount(0);
+    await toggle.locator('[data-mode="rendered"]').click();
+    await expect(item.locator('.crit-render-output mark.quote-highlight', { hasText: 'Handle request' })).toBeVisible();
+    await expect(item.locator('.crit-render-output mark.quote-highlight')).toHaveCount(1);
+  });
+});
+
 test.describe('Pluggable renderers — theme', () => {
   test('a theme change re-renders the diagram in the new theme', async ({ page, request }) => {
     await clearAllComments(request);

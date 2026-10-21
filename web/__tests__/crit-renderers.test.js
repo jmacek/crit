@@ -376,6 +376,7 @@ class FakeEl {
   hasAttribute(n) { return n in this.attrs; }
   getAttribute(n) { return n in this.attrs ? this.attrs[n] : null; }
   setAttribute(n, v) { this.attrs[n] = String(v); }
+  dispatchEvent() { return true; }
   appendChild(c) { c.parentElement = this; this.children.push(c); return c; }
   insertBefore(c, ref) {
     c.parentElement = this;
