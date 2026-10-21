@@ -1845,9 +1845,10 @@
     return null;
   }
 
-  // Files-mode code file: the whole file as a Pierre file item.
+  // Files-mode code file, or a markdown file in Source view: the whole file
+  // as a Pierre file item.
   function pierreIsFileView(file) {
-    return file.fileType === 'code' && file.viewMode === 'document' && !file.orphaned;
+    return ((file.fileType === 'code' && file.viewMode === 'document') || file.viewMode === 'source') && !file.orphaned;
   }
 
   function pierreLineCount(file) {
@@ -3395,12 +3396,15 @@
       });
     })(file.path);
 
-    // Add document/diff toggle for markdown files that have diff hunks.
+    // Document / Diff / Source toggle for markdown: Diff when the file has
+    // hunks, Source (the whole file as code) in files mode.
     // In git mode with base content available, offer a third Rendered view:
     // Previous-vs-Current split/unified (follows the existing split/unified
-    // toggle). Markdown only. Hide when diffActive is on (header-level
-    // rendered diff overrides per-file toggle).
-    if (file.fileType === 'markdown' && file.diffHunks && file.diffHunks.length > 0 && !diffActive) {
+    // toggle). Hide when diffActive is on (header-level rendered diff
+    // overrides per-file toggle).
+    const hasHunks = !!(file.diffHunks && file.diffHunks.length > 0);
+    const showSource = session.mode !== 'git' && !file.orphaned;
+    if (file.fileType === 'markdown' && (hasHunks || showSource) && !diffActive) {
       const hasRendered = hasRenderedDiff(file);
       const toggle = document.createElement('div');
       toggle.className = 'file-header-toggle';
@@ -3409,7 +3413,8 @@
       toggle.innerHTML =
         '<button type="button" class="toggle-btn' + (file.viewMode === 'document' ? ' active' : '') + '" data-mode="document" aria-pressed="' + (file.viewMode === 'document' ? 'true' : 'false') + '">Document</button>' +
         (hasRendered ? '<button type="button" class="toggle-btn' + (file.viewMode === 'rendered-diff' ? ' active' : '') + '" data-mode="rendered-diff" aria-pressed="' + (file.viewMode === 'rendered-diff' ? 'true' : 'false') + '">Rendered</button>' : '') +
-        '<button type="button" class="toggle-btn' + (file.viewMode === 'diff' ? ' active' : '') + '" data-mode="diff" aria-pressed="' + (file.viewMode === 'diff' ? 'true' : 'false') + '">Diff</button>';
+        (hasHunks ? '<button type="button" class="toggle-btn' + (file.viewMode === 'diff' ? ' active' : '') + '" data-mode="diff" aria-pressed="' + (file.viewMode === 'diff' ? 'true' : 'false') + '">Diff</button>' : '') +
+        (showSource ? '<button type="button" class="toggle-btn' + (file.viewMode === 'source' ? ' active' : '') + '" data-mode="source" aria-pressed="' + (file.viewMode === 'source' ? 'true' : 'false') + '">Source</button>' : '');
       toggle.addEventListener('click', function(e) {
         const btn = e.target.closest('.toggle-btn');
         if (!btn) return;
@@ -3433,7 +3438,7 @@
       header.appendChild(toggle);
 
       // Change navigation widget (file mode, both document and diff view)
-      if (session.mode !== 'git') {
+      if (session.mode !== 'git' && hasHunks) {
         const changeNav = document.createElement('div');
         changeNav.className = 'change-nav';
         const sc = window.crit && window.crit.shortcuts;
