@@ -141,6 +141,39 @@ test.describe('Comment markdown rendering', () => {
     await expectHighlightedCode(card(panel, code.id).locator('.comment-body'));
   });
 
+  test('a ref chip to a card already on the page scrolls straight to it', async ({ page, request }) => {
+    const path = await getMdPath(request);
+    const target = await addComment(request, path, 16, 'Target comment');
+    const ref = await addComment(request, path, 18, `See ${target.id}`);
+
+    await loadPage(page);
+    const doc = await switchToDocumentView(page);
+    await recordClassAdditions(page, 'comment-ref-flash');
+
+    // Put the chip near the top of the view; the target card sits just above.
+    const chip = card(doc, ref.id).locator('.comment-ref');
+    await expect(chip).toBeVisible();
+    await page.evaluate(() => {
+      const root = document.getElementById('filesContainer')!;
+      const chipEl = document.querySelector('.comment-ref')!;
+      root.scrollTop += chipEl.getBoundingClientRect().top - root.getBoundingClientRect().top - 40;
+      const w = window as unknown as { __minScrollTop: number };
+      w.__minScrollTop = root.scrollTop;
+      root.addEventListener('scroll', () => { w.__minScrollTop = Math.min(w.__minScrollTop, root.scrollTop); });
+    });
+    await expect(card(doc, target.id)).toBeAttached();
+
+    await expectClassAddedTo(page, 'comment-ref-flash', () => chip.click(), target.id);
+    await expect(card(doc, target.id)).toBeInViewport();
+
+    // The scroll never passed above where it ended: no detour to the top of the file.
+    await expect.poll(() => page.evaluate(() => {
+      const root = document.getElementById('filesContainer')!;
+      const w = window as unknown as { __minScrollTop: number };
+      return root.scrollTop - w.__minScrollTop;
+    })).toBeLessThanOrEqual(2);
+  });
+
   test('diff comments render markdown and tables', async ({ page, request }) => {
     // server.go new line 5 (`"log"`) is an addition.
     const table = await addComment(request, 'server.go', 5, TABLE_MD);
