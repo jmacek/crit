@@ -7317,10 +7317,15 @@
             // back to Document. Lazy files are checked once they load. A
             // renderer's view needs a renderer that still applies (the file
             // may have been deleted); without one the mode default applies.
+            // In files mode Diff needs hunks; a file the round left unchanged
+            // has no Diff button, so it goes back to Document.
             if (prev.viewMode === 'rendered-diff' && !files[fi].lazy && !hasRenderedDiff(files[fi])) {
               files[fi].viewMode = 'document';
             } else if (prev.viewMode === 'rendered' && !fileRendererFor(files[fi])) {
               files[fi].viewMode = session.mode === 'git' ? 'diff' : 'document';
+            } else if (prev.viewMode === 'diff' && session.mode !== 'git' && files[fi].fileType === 'markdown' &&
+                !files[fi].lazy && !(files[fi].diffHunks && files[fi].diffHunks.length > 0)) {
+              files[fi].viewMode = 'document';
             } else {
               files[fi].viewMode = prev.viewMode;
             }

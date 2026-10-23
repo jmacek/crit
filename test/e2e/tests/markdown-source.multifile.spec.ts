@@ -7,6 +7,11 @@ import { addComment, clearAllComments, loadPage, revealFile, fileHeader, diffLin
 
 const MD = 'plan.md';
 
+async function fileContent(request: APIRequestContext, filePath: string) {
+  const res = await request.get(`/api/file?path=${encodeURIComponent(filePath)}`);
+  return ((await res.json()) as { content: string }).content;
+}
+
 async function commentsOn(request: APIRequestContext, filePath: string) {
   const res = await request.get(`/api/file/comments?path=${encodeURIComponent(filePath)}`);
   return (await res.json()) as { start_line: number; end_line: number; body: string }[];
@@ -70,6 +75,34 @@ test.describe('Markdown Source view — files mode', () => {
       await expect(toggle.locator('.toggle-btn')).toHaveText(['Document', 'Diff', 'Source']);
       await toggle.locator('[data-mode="source"]').click();
       await expect(diffLine(item, 1)).toHaveText('# Migration Plan v2');
+    } finally {
+      fs.writeFileSync(file, original);
+      await roundComplete(request);
+    }
+  });
+
+  test('Diff goes back to Document when a round leaves the file with no changes', async ({ page, request }) => {
+    const file = path.join(await sessionCwd(request), MD);
+    const original = fs.readFileSync(file, 'utf8');
+    const v2 = original.replace('# Migration Plan', '# Migration Plan v2');
+    fs.writeFileSync(file, v2);
+    try {
+      await roundComplete(request);
+      await loadPage(page);
+      await revealFile(page, MD);
+      const toggle = fileHeader(page, MD).locator('.file-header-toggle');
+      await toggle.locator('[data-mode="diff"]').click();
+      await expect(toggle.locator('[data-mode="diff"]')).toHaveAttribute('aria-pressed', 'true');
+
+      // Edit the file and put it back in the same round: the round ends with no hunks.
+      fs.writeFileSync(file, original.replace('# Migration Plan', '# Migration Plan v3'));
+      await expect.poll(async () => (await fileContent(request, MD)).startsWith('# Migration Plan v3')).toBe(true);
+      fs.writeFileSync(file, v2);
+      await expect.poll(async () => (await fileContent(request, MD)).startsWith('# Migration Plan v2')).toBe(true);
+      await roundComplete(request);
+
+      await expect(toggle.locator('.toggle-btn')).toHaveText(['Document', 'Source']);
+      await expect(toggle.locator('[data-mode="document"]')).toHaveAttribute('aria-pressed', 'true');
     } finally {
       fs.writeFileSync(file, original);
       await roundComplete(request);
