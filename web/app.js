@@ -82,25 +82,34 @@
   // Scroll/expand/flash a comment card located anywhere in the document, given just its id.
   // Distinct from scrollToComment(commentId, filePath) below — that one needs filePath context.
   function scrollToCommentRef(id) {
-    // A card already on the page (and in story view, the card in the chapter
-    // pane) is scrolled to directly. pierreJumpToComment is for cards not
-    // mounted yet: it scrolls to the file first, which jumps the page to the
-    // top of the file and back when the card is nearby. In the review list,
-    // only look inside #filesContainer: the comments panel keeps its own copy
-    // of each card, even while hidden.
-    const scope = pierreViewActive() ? '#filesContainer ' : '';
-    const card = document.querySelector(scope + '.comment-card[data-comment-id="' + CSS.escape(id) + '"]');
-    if (card) {
-      flashCommentRefCard(card);
-      card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    const selector = '.comment-card[data-comment-id="' + CSS.escape(id) + '"]';
+    if (!pierreViewActive()) {
+      // Story view: the card is in the chapter pane when its chapter is shown.
+      const storyCard = document.querySelector(selector);
+      if (!storyCard) return;
+      flashCommentRefCard(storyCard);
+      storyCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
       return;
     }
-    if (pierreViewActive()) {
-      const owner = files.find(function(f) {
-        return (f.comments || []).some(function(c) { return c.id === id; });
-      });
-      if (owner) pierreJumpToComment(id, owner.path, flashCommentRefCard);
+    // A card already mounted in the review list is scrolled to directly.
+    // pierreJumpToComment is for cards not mounted yet: it scrolls to the file
+    // first, which jumps the page to the top of the file and back when the
+    // card is nearby. Only look inside #filesContainer: the comments panel
+    // keeps its own copy of each card, even while hidden.
+    const card = document.querySelector('#filesContainer ' + selector);
+    if (card) {
+      // Supersede a jump still in flight. Align with the instant loop, not a
+      // smooth scroll: files mounting on the way adjust scrollTop, and that
+      // cancels the browser's animation partway.
+      const seq = ++pierreJumpSeq;
+      flashCommentRefCard(card);
+      scrollPierreElementIntoView(card, function() { return seq === pierreJumpSeq; });
+      return;
     }
+    const owner = files.find(function(f) {
+      return (f.comments || []).some(function(c) { return c.id === id; });
+    });
+    if (owner) pierreJumpToComment(id, owner.path, flashCommentRefCard);
   }
 
   function flashCommentRefCard(card) {

@@ -168,3 +168,21 @@ test('a jump right after a review comment is not pulled back to the top', async 
   await waitForScrollStable(page);
   await expect(page.locator(`#filesContainer .comment-card[data-comment-id="${target.id}"]`)).toBeInViewport();
 });
+
+// A ref chip at the far end that points at a review comment scrolls the whole
+// way up to the conversation, which heads the list, without stopping partway.
+test('a ref chip at the bottom to a review comment scrolls back to it', async ({ page, request }) => {
+  const res = await request.post('/api/comments', { data: { body: 'Review-level note' } });
+  await expect(res).toBeOK();
+  const review = await res.json();
+  const tail = await addComment(request, TAIL_FILE, 1, `See ${review.id}`);
+  await loadPage(page);
+
+  await page.keyboard.press('Shift+C');
+  await page.locator('.panel-comment-block .comment-card').filter({ hasText: 'See' }).click();
+  const chip = page.locator(`#filesContainer .comment-card[data-comment-id="${tail.id}"] .comment-ref`);
+  await expect(chip).toBeInViewport();
+
+  await chip.click();
+  await expect(page.locator('#reviewConversation .comment-card')).toBeInViewport();
+});
