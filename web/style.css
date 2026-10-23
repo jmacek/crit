@@ -1764,6 +1764,12 @@ body.dragging { user-select: none; cursor: grabbing; }
   border-radius: 1px;
   padding: 1px 0;
 }
+/* A diagram label in SVG <text> has no background; underline it instead. */
+tspan.quote-highlight {
+  text-decoration: underline;
+  text-decoration-color: var(--crit-quote-highlight-border);
+  text-decoration-thickness: 1.5px;
+}
 .comment-body {
   padding: 10px 14px;
   color: var(--crit-editor-fg);

@@ -5691,6 +5691,8 @@
           if (node.textContent.length === 0) continue;
           // A rendered block's hidden source is not what the reader sees.
           if (node.parentElement.closest('.crit-render-source[hidden], .crit-render-expand')) continue;
+          // Nor is a drawn diagram's <style>, <title> or <desc>.
+          if (!isVisibleSvgText(node)) continue;
           const start = fullText.length;
           fullText += node.textContent;
           nodeRanges.push({ node: node, start: start, end: fullText.length });
@@ -5763,9 +5765,7 @@
 
         if (startInNode === 0 && endInNode === node.textContent.length) {
           // Wrap entire text node
-          const mark = document.createElement('mark');
-          mark.className = 'quote-highlight';
-          mark.dataset.commentId = comment.id;
+          const mark = quoteMark(node, comment.id);
           node.parentNode.replaceChild(mark, node);
           mark.appendChild(node);
         } else {
@@ -5775,9 +5775,7 @@
           const after = node.textContent.slice(endInNode);
           const frag = document.createDocumentFragment();
           if (before) frag.appendChild(document.createTextNode(before));
-          const mark = document.createElement('mark');
-          mark.className = 'quote-highlight';
-          mark.dataset.commentId = comment.id;
+          const mark = quoteMark(node, comment.id);
           mark.textContent = middle;
           frag.appendChild(mark);
           if (after) frag.appendChild(document.createTextNode(after));
@@ -5785,6 +5783,25 @@
         }
       }
     });
+  }
+
+  const SVG_NS = 'http://www.w3.org/2000/svg';
+
+  // Text directly in an SVG element is visible only in <text>, <tspan> and
+  // <textPath>; a diagram's <style>, <title> and <desc> hold text too.
+  function isVisibleSvgText(node) {
+    const parent = node.parentElement;
+    return parent.namespaceURI !== SVG_NS || /^(text|tspan|textPath)$/.test(parent.localName);
+  }
+
+  // The element that wraps a quoted part of textNode. SVG <text> does not draw
+  // an HTML <mark>, so a diagram label gets an SVG <tspan>.
+  function quoteMark(textNode, commentId) {
+    const inSvg = textNode.parentElement.namespaceURI === SVG_NS;
+    const mark = inSvg ? document.createElementNS(SVG_NS, 'tspan') : document.createElement('mark');
+    mark.setAttribute('class', 'quote-highlight');
+    mark.dataset.commentId = commentId;
+    return mark;
   }
 
   function createInlineEditor(comment, filePath) {
@@ -7826,7 +7843,8 @@
 
   // A diagram is drawn after the document's first highlight pass, which could
   // only see its hidden source: highlight quotes again in the drawn output.
-  // Deferred a frame so the renderer has cached its clean output first.
+  // Deferred so the renderer has cached its clean output first: it caches
+  // right after the event.
   function installRenderedQuoteHighlights() {
     document.addEventListener('crit:rendered', function(e) {
       const target = e.target;
@@ -7836,7 +7854,7 @@
         const section = block && block.closest('.file-section');
         const file = block && getFileByPath(block.dataset.filePath);
         if (!section || !file) return;
-        content.querySelectorAll('mark.quote-highlight').forEach(function(mark) {
+        content.querySelectorAll('.quote-highlight').forEach(function(mark) {
           mark.replaceWith.apply(mark, Array.from(mark.childNodes));
         });
         content.normalize();

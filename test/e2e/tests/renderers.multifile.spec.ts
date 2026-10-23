@@ -7,6 +7,7 @@ import { addComment, clearAllComments, loadPage, revealFile, fileHeader, diffLin
 // .mmd / .mermaid files and gives them a Diagram / Source toggle.
 
 const MMD = 'flow.mmd';
+const SEQ = 'seq.mmd';
 
 async function commentsOn(request: APIRequestContext, filePath: string) {
   const res = await request.get(`/api/file/comments?path=${encodeURIComponent(filePath)}`);
@@ -99,6 +100,33 @@ test.describe('Pluggable renderers — quoted comments', () => {
     await toggle.locator('[data-mode="rendered"]').click();
     await expect(item.locator('.crit-render-output mark.quote-highlight', { hasText: 'Handle request' })).toBeVisible();
     await expect(item.locator('.crit-render-output mark.quote-highlight')).toHaveCount(1);
+  });
+
+  test('a quote that also appears in the diagram CSS is highlighted on the label', async ({ page, request }) => {
+    await clearAllComments(request);
+    const res = await request.post(`/api/file/comments?path=${encodeURIComponent(MMD)}`, {
+      data: { start_line: 1, end_line: 4, body: 'Say why', quote: 'no' },
+    });
+    expect(res.ok()).toBeTruthy();
+    await loadPage(page);
+    const item = await revealFile(page, MMD);
+    await expect(item.locator('.crit-render-output mark.quote-highlight', { hasText: /^no$/ })).toBeVisible();
+    await expect(item.locator('.crit-render-output style .quote-highlight')).toHaveCount(0);
+  });
+
+  test('a quote of an SVG text label keeps the label drawn', async ({ page, request }) => {
+    await clearAllComments(request);
+    const res = await request.post(`/api/file/comments?path=${encodeURIComponent(SEQ)}`, {
+      data: { start_line: 1, end_line: 3, body: 'Which request?', quote: 'Send request' },
+    });
+    expect(res.ok()).toBeTruthy();
+    await loadPage(page);
+    const item = await revealFile(page, SEQ);
+    const mark = item.locator('.crit-render-output svg text tspan.quote-highlight', { hasText: 'Send request' });
+    await expect(mark).toHaveCount(1);
+    // An HTML <mark> in SVG <text> is not drawn: the label would have no width.
+    const width = await mark.evaluate(el => (el as SVGTextContentElement).getComputedTextLength());
+    expect(width).toBeGreaterThan(0);
   });
 });
 
