@@ -7687,6 +7687,10 @@
   // layer too (or tears it down if the data dropped the story); it keeps its
   // position when the current chapter still exists.
   function rerenderReview() {
+    // The Document view scroll anchor names its block by line numbers, which
+    // the new content may have shifted, so it would pin a different block.
+    // The next scroll sets it again.
+    pierreReaderAnchor = null;
     updateDiffModeToggle();
     renderFileTree();
     renderAllFiles();
