@@ -85,8 +85,11 @@
     // A card already on the page (and in story view, the card in the chapter
     // pane) is scrolled to directly. pierreJumpToComment is for cards not
     // mounted yet: it scrolls to the file first, which jumps the page to the
-    // top of the file and back when the card is nearby.
-    const card = document.querySelector('.comment-card[data-comment-id="' + CSS.escape(id) + '"]');
+    // top of the file and back when the card is nearby. In the review list,
+    // only look inside #filesContainer: the comments panel keeps its own copy
+    // of each card, even while hidden.
+    const scope = pierreViewActive() ? '#filesContainer ' : '';
+    const card = document.querySelector(scope + '.comment-card[data-comment-id="' + CSS.escape(id) + '"]');
     if (card) {
       flashCommentRefCard(card);
       card.scrollIntoView({ behavior: 'smooth', block: 'center' });

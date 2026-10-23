@@ -174,6 +174,26 @@ test.describe('Comment markdown rendering', () => {
     })).toBeLessThanOrEqual(2);
   });
 
+  test('a ref chip jumps the document even when the comments panel holds a copy of the card', async ({ page, request }) => {
+    // The target is in another file, so its card is not mounted in the list.
+    // The panel keeps its cards after it closes; the click must not stop there.
+    const path = await getMdPath(request);
+    const target = await addComment(request, 'server.go', 5, 'Target comment');
+    const ref = await addComment(request, path, 18, `See ${target.id}`);
+
+    await loadPage(page);
+    const doc = await switchToDocumentView(page);
+    await page.locator('#commentCount').click();
+    await expect(card(page.locator('#commentsPanelBody'), target.id)).toBeVisible();
+    await page.locator('#commentCount').click();
+    await expect(page.locator('#commentsPanel')).toHaveClass(/comments-panel-hidden/);
+
+    const chip = card(doc, ref.id).locator('.comment-ref');
+    await chip.scrollIntoViewIfNeeded();
+    await chip.click();
+    await expect(card(page.locator('#filesContainer'), target.id)).toBeInViewport();
+  });
+
   test('diff comments render markdown and tables', async ({ page, request }) => {
     // server.go new line 5 (`"log"`) is an addition.
     const table = await addComment(request, 'server.go', 5, TABLE_MD);
