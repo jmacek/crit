@@ -1991,10 +1991,103 @@
   // scroll fix has already run in the same frame when ours puts the block back.
   let pierreReaderAnchor = null; // { section, selector (null: the section itself), top }
   let pierreDocumentResizeObserver = null;
+  // Content on screen at the start of a round, keyed by path. Set only for
+  // the re-render that follows file-changed, so a line-number anchor can be
+  // retargeted before that render paints.
+  let roundPreviousContent = null;
 
   function readerAnchorSelector(el) {
     if (el.dataset.commentId) return '.comment-card[data-comment-id="' + CSS.escape(el.dataset.commentId) + '"]';
     return '.line-block[data-start-line="' + el.dataset.startLine + '"][data-end-line="' + el.dataset.endLine + '"]';
+  }
+
+  function countLineWindow(haystack, windowLines) {
+    const width = windowLines.length;
+    if (width === 0) return { count: 0, at: -1 };
+    let count = 0;
+    let at = -1;
+    for (let i = 0; i + width <= haystack.length; i++) {
+      let same = true;
+      for (let j = 0; j < width; j++) {
+        if (haystack[i + j] !== windowLines[j]) { same = false; break; }
+      }
+      if (!same) continue;
+      count++;
+      at = i;
+      if (count > 1) return { count: count, at: at };
+    }
+    return { count: count, at: at };
+  }
+
+  // Where the on-screen line range went after a round. Widens until the
+  // quoted lines are unique in the previous text, then finds that quote in
+  // the new text. Null when the quoted lines themselves changed.
+  function mapDisplayedLineRange(previousContent, nextContent, start, end) {
+    const oldLines = previousContent.split('\n');
+    const newLines = nextContent.split('\n');
+    if (start < 1 || end < start || end > oldLines.length) return null;
+    let lo = start - 1;
+    let hi = end;
+    let windowLines = oldLines.slice(lo, hi);
+    let guard = oldLines.length;
+    while (countLineWindow(oldLines, windowLines).count > 1 && guard > 0) {
+      guard--;
+      if (lo > 0) lo--;
+      else if (hi < oldLines.length) hi++;
+      else break;
+      windowLines = oldLines.slice(lo, hi);
+    }
+    if (countLineWindow(oldLines, windowLines).count !== 1) return null;
+    const found = countLineWindow(newLines, windowLines);
+    if (found.count !== 1) return null;
+    const newStart = found.at + (start - 1 - lo) + 1;
+    const newEnd = newStart + (end - start);
+    if (newEnd > newLines.length) return null;
+    return { start: newStart, end: newEnd };
+  }
+
+  function lineBlockCovering(file, start, end) {
+    const blocks = file.lineBlocks || [];
+    let best = null;
+    for (let i = 0; i < blocks.length; i++) {
+      const block = blocks[i];
+      if (block.startLine > start || block.endLine < end) continue;
+      if (!best || (block.endLine - block.startLine) < (best.endLine - best.startLine)) best = block;
+    }
+    return best;
+  }
+
+  // A line-number anchor names a block that a round may have shifted. Point
+  // it at the same lines in the new document before the re-render. A comment
+  // card is named by id, and the section itself has no line numbers; neither
+  // needs this. Drop the anchor when the quoted lines changed, rather than
+  // pin a different block.
+  function remapPierreReaderAnchor(section, file) {
+    const anchor = pierreReaderAnchor;
+    if (!roundPreviousContent || !anchor || anchor.section !== section || !anchor.selector) return;
+    if (anchor.selector.indexOf('data-start-line=') === -1) return;
+    const previous = roundPreviousContent.get(file.path);
+    const match = /data-start-line="(\d+)"\]\[data-end-line="(\d+)"\]/.exec(anchor.selector);
+    if (previous === undefined || !match) { pierreReaderAnchor = null; return; }
+    const shifted = mapDisplayedLineRange(previous, file.content || '', Number(match[1]), Number(match[2]));
+    const block = shifted && lineBlockCovering(file, shifted.start, shifted.end);
+    if (!block) { pierreReaderAnchor = null; return; }
+    anchor.selector = '.line-block[data-start-line="' + block.startLine + '"][data-end-line="' + block.endLine + '"]';
+  }
+
+  // Put the anchored block back before the browser paints. The resize
+  // observer does this for later height changes; a round's re-render also
+  // needs it in the same turn, or the first frame shows the shifted lines.
+  function holdPierreReaderAnchor() {
+    const anchor = pierreReaderAnchor;
+    if (!anchor || !anchor.section.isConnected) return;
+    const el = anchor.selector ? anchor.section.querySelector(anchor.selector) : anchor.section;
+    const scroller = document.getElementById('filesContainer');
+    if (!el || !scroller) return;
+    const shift = el.getBoundingClientRect().top - anchor.top;
+    if (Math.abs(shift) >= 1) scroller.scrollTop += shift;
+    const placed = anchor.selector ? anchor.section.querySelector(anchor.selector) : anchor.section;
+    if (placed) anchor.top = placed.getBoundingClientRect().top;
   }
 
   // The document block or thread the top edge of the review pane cuts
@@ -2073,10 +2166,12 @@
     const file = getFileByPath(filePath);
     if (!file || file.lazy || !pierreIsDocumentView(file)) return;
     saveOpenFormContent(filePath);
+    remapPierreReaderAnchor(section, file);
     const body = section.querySelector(':scope > .file-body');
     populateDocumentBody(body, file);
     highlightQuotesInSection(section, file);
     if (section.isConnected) renderPluggableBlocks();
+    holdPierreReaderAnchor();
   }
 
   function buildPierreThread(filePath, commentId) {
@@ -7347,16 +7442,12 @@
             viewed: files[pi].viewed,
             viewedHunks: files[pi].viewedHunks,
             fileHash: files[pi].fileHash,
+            content: files[pi].content || '',
           };
         }
 
         // Clear commit filter on round-complete
         clearCommitPins();
-
-        // The Document view scroll anchor names its block by line numbers,
-        // which the new round may have shifted, so it would pin a different
-        // block. The next scroll sets it again.
-        pierreReaderAnchor = null;
 
         // Re-fetch everything on file-changed (round complete)
         let sessionRes = await hydrateStoryIfMissing(await fetchWhenReady('/api/session?scope=' + enc(currentSessionFetchScope())));
@@ -7421,7 +7512,20 @@
         updateHeaderRound();
         updateDiffModeToggle();
         renderFileTree();
-        renderAllFiles();
+        // Retarget the reader anchor at the shifted lines during the
+        // re-render below. Clearing it lets the first painted frame jump,
+        // then a later frame puts the block back.
+        roundPreviousContent = new Map();
+        for (let ri = 0; ri < files.length; ri++) {
+          const prev = prevState[files[ri].path];
+          if (prev) roundPreviousContent.set(files[ri].path, prev.content);
+        }
+        try {
+          renderAllFiles();
+          holdPierreReaderAnchor();
+        } finally {
+          roundPreviousContent = null;
+        }
         buildToc();
         updateCommentCount();
         updateViewedCount();

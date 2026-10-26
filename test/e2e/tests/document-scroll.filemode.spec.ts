@@ -75,7 +75,7 @@ test.describe('Document view keeps the reader in place — File Mode', () => {
     await card.evaluate((el) => el.scrollIntoView({ block: 'center' }));
     await waitForScrollStable(page);
     await expectDocumentStartsAboveScreen(section, reviewScroller(page));
-    const before = await screenTop(card);
+    await startTrackingScreenTop(card);
 
     // WHEN - the reviewer finishes, the agent adds paragraphs at the top of the plan, and a new round starts
     const file = path.join(await sessionCwd(request), mdPath);
@@ -94,8 +94,10 @@ test.describe('Document view keeps the reader in place — File Mode', () => {
       await expect(section.getByText('Added above the thread.')).toBeAttached();
       await waitForScrollStable(page);
 
-      // THEN - the thread is where it was, although its line numbers moved down
-      expect(Math.abs((await screenTop(card)) - before)).toBeLessThan(MAX_MOVE_PX);
+      // THEN - the thread stayed where it was in every frame, including while
+      // the waiting dialog covered the page. A jump that is put back before
+      // the dialog closes still counts.
+      expect(await largestMoveSinceTrackingStarted(card)).toBeLessThan(MAX_MOVE_PX);
     } finally {
       fs.writeFileSync(file, original);
       await roundComplete(request);
