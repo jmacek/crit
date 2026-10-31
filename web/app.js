@@ -2098,6 +2098,10 @@
   // Blocks are in vertical order, so a binary search keeps this cheap on
   // long documents.
   function rememberPierreReaderAnchor() {
+    // A refetch render scrolls while the line numbers are still the old ones.
+    // Remembering that position would replace the anchor remap is about to
+    // retarget, and the reader would stay where the jump landed.
+    if (roundPreviousContent) return;
     pierreReaderAnchor = null;
     const scroller = document.getElementById('filesContainer');
     if (!scroller) return;
@@ -3058,7 +3062,14 @@
     view.setRenderOptions(Object.assign(pierreDisplayOptions(), { layout: pierreListLayout() }));
     view.setDiffStyle(diffMode);
     syncPierreCommentRanges();
+    const scroller = document.getElementById('filesContainer');
+    const savedScroll = roundPreviousContent && scroller ? scroller.scrollTop : null;
     view.setFiles(files);
+    // setItems replaces every row. Pierre drops its scroll anchor when the
+    // row it was holding is replaced, which throws the reader down the file.
+    // Put the scroll back before the document is redrawn, so the line-number
+    // retarget only has to account for lines inserted above it.
+    if (savedScroll !== null) scroller.scrollTop = savedScroll;
     files.forEach(function(f) { if (pierreIsDocumentView(f)) refreshPierreDocument(f.path); });
     rebuildNavList();
     applyHideResolved();
@@ -7443,27 +7454,25 @@
         // file's view state. The round's own content supersedes any
         // files-changed toast, including one raised during the fetch.
         // false: a newer fetch (a Reload) already took over the page data.
-        const fresh = await refetchReviewFiles();
+        await refetchReviewFiles();
         dismissToast('files-changed');
 
+        activeForms = [];
+        activeReplyForms.clear();
+        activeFilePath = null;
+        selectionStart = null;
+        selectionEnd = null;
+        focusedBlockIndex = null;
+        focusedFilePath = null;
+        focusedElement = null;
+        clearPierreFocus();
+        diffActive = false;
+        reviewCommentFormActive = false;
+        reviewCommentEditingId = null;
+        navCommentId = null;
+
         updateHeaderRound();
-        // A superseded fetch must not clear forms or redraw over the winner.
-        if (fresh) {
-          activeForms = [];
-          activeReplyForms.clear();
-          activeFilePath = null;
-          selectionStart = null;
-          selectionEnd = null;
-          focusedBlockIndex = null;
-          focusedFilePath = null;
-          focusedElement = null;
-          clearPierreFocus();
-          diffActive = false;
-          reviewCommentFormActive = false;
-          reviewCommentEditingId = null;
-          navCommentId = null;
-          rerenderReview();
-        }
+        rerenderReview();
         setUIState('reviewing');
         // Signal "ready" in the tab bar if the user has tabbed away.
         // Cleared on visibilitychange → visible.
@@ -7789,6 +7798,10 @@
   // the data dropped the story); it keeps its position when the current
   // chapter still exists.
   function rerenderReview() {
+    // scrollIntoView does not notify Pierre's scroll listener, so the stored
+    // anchor can still name a line from an earlier position. Snapshot what
+    // the top edge cuts now, before the refetch render moves it.
+    rememberPierreReaderAnchor();
     const previous = reviewPreviousContent;
     updateDiffModeToggle();
     renderFileTree();
